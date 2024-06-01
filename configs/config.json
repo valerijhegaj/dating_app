@@ -1,0 +1,13 @@
+{
+  "main": {
+    "port": 8080,
+    "hash_key": "very smart password hashing",
+    "max_age": 2000000
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5433,
+    "user": "admin",
+    "password": "very weak password"
+  }
+}
