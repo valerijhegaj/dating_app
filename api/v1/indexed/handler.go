@@ -11,7 +11,7 @@ type ans struct {
 	UserID int `json:"user_id"`
 }
 
-func Handler(db storage.Storage) http.HandlerFunc {
+func GetHandler(db storage.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := r.Context().Value("userID").(int)
 		indexedID, err := db.GetIndexed(r.Context(), userID)

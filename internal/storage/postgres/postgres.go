@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"date-app/configs"
 	"date-app/internal/profile"
 	"date-app/internal/storage"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -17,13 +18,20 @@ type Storage struct {
 }
 
 func (s *Storage) MakeLike(
-	ctx context.Context, userID, likedUserID int,
+	ctx context.Context, userID, likedUserID int, isLike bool,
 ) error {
-	query := `UPDATE dating_data.starred_users 
-            SET is_liked = true 
-            WHERE user_id = $1 AND starred_user_id = $2`
-	_, err := s.Db.ExecContext(ctx, query, userID, likedUserID)
-	return err
+	query := `SELECT dating_data.make_like($1, $2, $3)`
+	var isAllowed bool
+	err := s.Db.QueryRowContext(
+		ctx, query, userID, likedUserID, isLike,
+	).Scan(&isAllowed)
+	if err != nil {
+		return err
+	}
+	if !isAllowed {
+		return storage.ErrLikeNotIndexed
+	}
+	return nil
 }
 
 func (s *Storage) GetMatches(
@@ -108,7 +116,9 @@ func (s *Storage) GetIndexed(ctx context.Context, userID int) (
 ) {
 	var indexedID int
 	if err := s.Db.QueryRowContext(
-		ctx, `SELECT dating_data.get_indexed($1)`, userID,
+		ctx,
+		`SELECT indexed_user_id FROM dating_data.indexed_users WHERE user_id = $1 LIMIT 1`,
+		userID,
 	).Scan(&indexedID); err != nil {
 		return 0, err
 	}
@@ -257,11 +267,11 @@ var triggerQuery string
 var functionsQuery string
 
 // TODO init config in secrets
-const (
-	host     = "localhost"
-	port     = 5433
-	user     = "postgres"
-	password = "postgres"
+var (
+	host     = configs.Config.Database.Host
+	port     = configs.Config.Database.Port
+	user     = configs.Config.Database.User
+	password = configs.Config.Database.Password
 )
 
 func New() (storage.Storage, error) {

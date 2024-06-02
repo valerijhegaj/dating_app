@@ -1,6 +1,7 @@
 package like
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -15,9 +16,18 @@ func Handler(db storage.Storage) http.HandlerFunc {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		err = db.MakeLike(r.Context(), userID, likeUserID)
+		isLike, err := strconv.Atoi(r.URL.Query().Get("is_like"))
 		if err != nil {
-			w.WriteHeader(http.StatusForbidden)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		err = db.MakeLike(r.Context(), userID, likeUserID, isLike == 1)
+		if err != nil {
+			if errors.Is(err, storage.ErrLikeNotIndexed) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
