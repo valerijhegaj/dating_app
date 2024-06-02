@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,25 +15,12 @@ import (
 	"date-app/api/v1/profile"
 	"date-app/api/v1/session"
 	"date-app/api/v1/user"
+	"date-app/configs"
 	"date-app/internal/storage/postgres"
 )
 
-const (
-	port = 8080
-)
-
-func handler(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(id))
-}
-
 func main() {
-	var PORT int
-	flag.IntVar(
-		&PORT, "port", port, "port for server",
-	)
-	flag.Parse()
+	PORT := configs.Config.Main.Port
 
 	db, err := postgres.New()
 	if err != nil {
@@ -45,8 +31,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	http.HandleFunc("GET /endpoint/{id}", handler)
-	http.HandleFunc("POST /endpoint", handler)
 	http.Handle("POST /api/v1/user", user.Handler(db))
 
 	http.Handle(
@@ -61,7 +45,7 @@ func main() {
 	)
 
 	http.Handle(
-		"GET /api/v1/indexed", auth.CheckAuth(db)(indexed.Handler(db)),
+		"GET /api/v1/indexed", auth.CheckAuth(db)(indexed.GetHandler(db)),
 	)
 
 	http.Handle(
@@ -80,7 +64,7 @@ func main() {
 		auth.CheckAuth(db)(actual.GetHandler(db)),
 	)
 	http.Handle(
-		"DELETE /api/v1/matches/actual",
+		"POST /api/v1/matches/actual",
 		auth.CheckAuth(db)(actual.DeleteHandler(db)),
 	)
 

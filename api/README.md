@@ -15,9 +15,9 @@
     GET    /api/v1/matches               - get all matches
     
     GET    /api/v1/matches/actual        - get new matches
-    DELETE /api/v1/matches/actual        - make match viewed
+    POST   /api/v1/matches/actual        - make match viewed
 
-    POST   /api/v1/like/{user_id}        - make like
+    POST   /api/v1/like/{user_id}?is_like={0/1} - make like
 
 ## Details of http requests
 ### /api/v1/user
@@ -154,7 +154,7 @@
       401 - Unauthorized
       403 - 0 left likes for today
       500 - something went wrong
-#### DELETE
+#### POST
     request:
       Cookie: token=your_access_token
       body: {
@@ -163,7 +163,7 @@
     response:
       201 - successfully make match viewed
       500 - something went wrong
-### /api/v1/like/{user_id}
+### /api/v1/like/{user_id}?is_like={0/1}
 #### POST
     request:
       Cookie: token=your_access_token

@@ -22,9 +22,15 @@ type database struct {
 	Password string `json:"password"`
 }
 
+type tgBot struct {
+	Host  string `json:"host"`
+	Token string `json:"token"`
+}
+
 type ConfigType struct {
 	Main     main     `json:"main"`
 	Database database `json:"database"`
+	TgBot    tgBot    `json:"tg-bot"`
 }
 
 var Config ConfigType

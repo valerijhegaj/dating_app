@@ -11,6 +11,7 @@ var (
 	existUser               = errors.New("user already exist")
 	ErrTokenNotFound        = errors.New("token not found")
 	ErrLoginOrPasswordWrong = errors.New("login or password wrong")
+	ErrLikeNotIndexed       = errors.New("like not indexed")
 )
 
 type Storage interface {
@@ -52,5 +53,7 @@ type Storage interface {
 	)
 	DeleteNewMatch(ctx context.Context, userID, likedUserID int) error
 
-	MakeLike(ctx context.Context, userID, likedUserID int) error
+	MakeLike(
+		ctx context.Context, userID, likedUserID int, isLike bool,
+	) error
 }

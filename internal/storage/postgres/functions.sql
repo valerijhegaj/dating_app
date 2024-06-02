@@ -61,19 +61,19 @@ BEGIN
 END;
 $$ language plpgsql;
 
--- получить подобранную пору
-CREATE OR REPLACE FUNCTION dating_data.get_indexed(userID INTEGER) RETURNS INTEGER AS
+-- сделать лайк
+CREATE OR REPLACE FUNCTION dating_data.make_like(userID INTEGER, indexedID INTEGER, isLike BOOL) RETURNS BOOLEAN AS
 $$
-DECLARE
-    i_id INTEGER;
 BEGIN
-    i_id := (SELECT indexed_user_id FROM dating_data.indexed_users WHERE user_id = userID LIMIT 1);
-    DELETE FROM dating_data.indexed_users WHERE user_id = userID AND indexed_user_id = i_id;
-    INSERT INTO dating_data.starred_users
-    (user_id, starred_user_id, viewed, is_liked, time) VALUES
-    (userID, i_id, false, false, NOW());
-
-    RETURN i_id;
+    IF (SELECT user_id FROM dating_data.indexed_users WHERE user_id = userID AND indexed_user_id = indexedID) = userID
+    THEN
+        DELETE FROM dating_data.indexed_users WHERE user_id = userID AND indexed_user_id = indexedID;
+        INSERT INTO dating_data.starred_users
+        (user_id, starred_user_id, viewed, is_liked, time) VALUES
+        (userID, indexedID, false, isLike, NOW());
+        RETURN TRUE;
+    END IF;
+    RETURN FALSE;
 END;
 $$ language plpgsql;
 
