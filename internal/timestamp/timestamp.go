@@ -16,7 +16,7 @@ func ToTimestamp(age string) string {
 }
 
 func ToAge(timestamp string) string {
-	birthDay, err := time.Parse("2006-01-02", timestamp)
+	birthDay, err := time.Parse("2006-01-02", timestamp[:10])
 	if err != nil {
 		return ""
 	}

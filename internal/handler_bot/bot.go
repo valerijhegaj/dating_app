@@ -202,10 +202,10 @@ func HandlerOnLike(
 			break
 		}
 
-		//notificationChatID := TelegramUserID[like.UserID]
-		//if err = ChangeToStateMatch(bot, notificationChatID); err != nil {
-		//	return fmt.Errorf("%s: %w", op, err)
-		//}
+		notificationChatID := TelegramUserID[like.UserID]
+		if err = ChangeToStateMatch(bot, notificationChatID); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 		if err = ChangeToStateMatch(bot, chatID); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
