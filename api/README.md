@@ -66,7 +66,8 @@
         "sex": bool (false - woman, true - man),
         "birthday": string,
         "name": string,
-        "photo": [string, ...]
+        "photo": [string, ...],
+        "url": string
       }
       500 - something went wrong
 #### POST
@@ -77,7 +78,8 @@
         "sex": bool (false - woman, true - man),
         "birthday": string,
         "name": string,
-        "photo": [string, ...]
+        "photo": [string, ...],
+        "url": string
       }
     response:
       201 - sussess created profile
@@ -169,5 +171,9 @@
       Cookie: token=your_access_token
     response:
       201 - successfully liked
+      body: {
+        "user_id": int,
+        "time": string
+      } - user_id != 0 if match
       403 - permission denied
       500 - something went wrong

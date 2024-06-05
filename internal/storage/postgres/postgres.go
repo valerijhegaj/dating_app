@@ -19,19 +19,34 @@ type Storage struct {
 
 func (s *Storage) MakeLike(
 	ctx context.Context, userID, likedUserID int, isLike bool,
-) error {
+) (bool, error) {
 	query := `SELECT dating_data.make_like($1, $2, $3)`
 	var isAllowed bool
 	err := s.Db.QueryRowContext(
 		ctx, query, userID, likedUserID, isLike,
 	).Scan(&isAllowed)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !isAllowed {
-		return storage.ErrLikeNotIndexed
+		return false, storage.ErrLikeNotIndexed
 	}
-	return nil
+	if !isLike {
+		return false, nil
+	}
+	query = `SELECT user_id 
+           FROM dating_data.starred_users 
+					 WHERE user_id=$1 AND starred_user_id=$2 AND is_liked = true`
+	err = s.Db.QueryRowContext(
+		ctx, query, likedUserID, userID,
+	).Scan(&likedUserID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Storage) GetMatches(
@@ -130,11 +145,12 @@ func (s *Storage) GetProfile(
 ) (profile.Profile, error) {
 	var ans profile.Profile
 	var profileID int
-	query := `SELECT profile_id, profile_text, sex, birthday, name
+	query := `SELECT profile_id, profile_text, sex, birthday, name, url
 				   FROM dating_data.profile
 				   WHERE user_id = $1`
 	err := s.Db.QueryRowContext(ctx, query, userID).Scan(
 		&profileID, &ans.ProfileText, &ans.Sex, &ans.Birthday, &ans.Name,
+		&ans.URL,
 	)
 	if err != nil {
 		return ans, err
@@ -168,9 +184,9 @@ func (s *Storage) AddProfile(
 ) error {
 	var profileID int
 	if err := s.Db.QueryRowContext(
-		ctx, `SELECT dating_data.create_profile($1, $2, $3, $4, $5)`,
+		ctx, `SELECT dating_data.create_profile($1, $2, $3, $4, $5, $6)`,
 		userID, profile.ProfileText, profile.Sex, profile.Birthday,
-		profile.Name,
+		profile.Name, profile.URL,
 	).Scan(&profileID); err != nil {
 		return err
 	}

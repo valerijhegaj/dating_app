@@ -55,5 +55,5 @@ type Storage interface {
 
 	MakeLike(
 		ctx context.Context, userID, likedUserID int, isLike bool,
-	) error
+	) (bool, error)
 }

@@ -37,6 +37,13 @@ type localization struct {
 		NoPhoto      string `json:"no_photo"`
 		Finish       string `json:"finish"`
 	} `json:"profile_questions"`
+	Match struct {
+		LikeScreen  string `json:"like_screen"`
+		WaitScreen  string `json:"wait_screen"`
+		Messeage    string `json:"messeage"`
+		Next        string `json:"next"`
+		FinishMatch string `json:"finish_match"`
+	} `json:"match"`
 }
 
 var Russian localization

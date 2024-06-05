@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS dating_data.profile (
     sex BOOL NOT NULL,
     birthday TIMESTAMP,
     name VARCHAR(255) NOT NULL,
+    url TEXT,
 
     PRIMARY KEY (profile_id),
     FOREIGN KEY (user_id) REFERENCES  dating_data.user
@@ -63,6 +64,7 @@ CREATE TABLE IF NOT EXISTS dating_data.profile_history (
     sex BOOL NOT NULL,
     birthday TIMESTAMP,
     name VARCHAR(255) NOT NULL,
+    url TEXT,
     end_time TIMESTAMP DEFAULT NOW(),
 
     PRIMARY KEY (profile_id),

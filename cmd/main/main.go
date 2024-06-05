@@ -65,7 +65,7 @@ func main() {
 	)
 	http.Handle(
 		"POST /api/v1/matches/actual",
-		auth.CheckAuth(db)(actual.DeleteHandler(db)),
+		auth.CheckAuth(db)(actual.PostHandler(db)),
 	)
 
 	http.Handle(

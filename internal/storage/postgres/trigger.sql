@@ -10,9 +10,9 @@ BEGIN
     END IF;
 
     INSERT INTO dating_data.profile_history (
-        profile_id, user_id, profile_text, sex, birthday, name, end_time
+        profile_id, user_id, profile_text, sex, birthday, name, url, end_time
     )
-    SELECT profile_id, user_id, profile_text, sex, birthday, name, NOW()
+    SELECT profile_id, user_id, profile_text, sex, birthday, name, url, NOW()
     FROM dating_data.profile
     WHERE profile_id = p_id;
 

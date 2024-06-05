@@ -1,10 +1,13 @@
 package like
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
+	"date-app/internal/profile"
 	"date-app/internal/storage"
 )
 
@@ -21,7 +24,9 @@ func Handler(db storage.Storage) http.HandlerFunc {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		err = db.MakeLike(r.Context(), userID, likeUserID, isLike == 1)
+		isMatch, err := db.MakeLike(
+			r.Context(), userID, likeUserID, isLike == 1,
+		)
 		if err != nil {
 			if errors.Is(err, storage.ErrLikeNotIndexed) {
 				w.WriteHeader(http.StatusForbidden)
@@ -31,5 +36,12 @@ func Handler(db storage.Storage) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
+		var ans profile.Like
+		if isMatch {
+			ans.UserID = likeUserID
+			ans.Time = time.Now().Format("2006-01-02")
+		}
+		data, _ := json.Marshal(ans)
+		_, _ = w.Write(data)
 	}
 }
