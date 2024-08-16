@@ -107,6 +107,10 @@ func main() {
 		log.Fatalf("HTTP shutdown error: %v", err)
 	}
 	<-shutdownChan
+
+	if err = db.Close(); err != nil {
+		log.Fatalf("DB close error: %v", err)
+	}
 	log.Println("Server stopped.")
 
 }

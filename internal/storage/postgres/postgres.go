@@ -271,6 +271,10 @@ func (s *Storage) Ping() error {
 	return s.Db.Ping()
 }
 
+func (s *Storage) Close() error {
+	return s.Db.Close()
+}
+
 var _ storage.Storage = (*Storage)(nil)
 
 //go:embed init.sql
