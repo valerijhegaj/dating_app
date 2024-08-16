@@ -82,6 +82,8 @@ func main() {
 		Addr: fmt.Sprintf(":%d", PORT),
 	}
 
+	shutdownChan := make(chan struct{})
+
 	go func() {
 		if err = server.ListenAndServe(); !errors.Is(
 			err, http.ErrServerClosed,
@@ -89,6 +91,7 @@ func main() {
 			log.Fatal(err.Error())
 		}
 		log.Println("ListenAndServe stopped.")
+		shutdownChan <- struct{}{}
 	}()
 
 	sigChan := make(chan os.Signal, 1)
@@ -103,6 +106,7 @@ func main() {
 	if err = server.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("HTTP shutdown error: %v", err)
 	}
+	<-shutdownChan
 	log.Println("Server stopped.")
 
 }
