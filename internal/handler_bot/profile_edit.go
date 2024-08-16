@@ -8,7 +8,6 @@ import (
 	"date-app/configs"
 	"date-app/internal/handler_bot/bot_client"
 	"date-app/internal/hash"
-	"date-app/internal/profile"
 	"date-app/internal/timestamp"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -27,13 +26,14 @@ var finishProfileKeyboard = tgbotapi.NewReplyKeyboard(
 )
 
 func HandlerNameChoice(
-	bot *tgbotapi.BotAPI, chatID int64, text string, username string,
+	bot *tgbotapi.BotAPI, chatID int64, name string, username string,
 ) error {
 	const op = "HandlerNameChoice"
 
-	UserProfile[chatID] = profile.Profile{Name: text, URL: username}
+	Manager.UpdateProfileName(chatID, name)
+	Manager.UpdateProfileURL(chatID, username)
 
-	UserState[chatID] = StateProfileSexChoice
+	Manager.UpdateState(chatID, StateProfileSexChoice)
 
 	err := Send(
 		bot, chatID, sexChoiceKeyboard,
@@ -46,16 +46,16 @@ func HandlerNameChoice(
 }
 
 func HandlerSexChoice(
-	bot *tgbotapi.BotAPI, chatID int64, text string,
+	bot *tgbotapi.BotAPI, chatID int64, sexText string,
 ) error {
 	const op = "HandlerSexChoice"
 
-	userProfile := UserProfile[chatID]
-	switch text {
+	var sex bool
+	switch sexText {
 	case localization.Russian.ProfileQuestions.Man:
-		userProfile.Sex = true
+		sex = true
 	case localization.Russian.ProfileQuestions.NotMan:
-		userProfile.Sex = false
+		sex = false
 	default:
 		err := Send(
 			bot, chatID, nil,
@@ -66,9 +66,10 @@ func HandlerSexChoice(
 		}
 		return nil
 	}
-	UserProfile[chatID] = userProfile
 
-	UserState[chatID] = StateProfileAgeChoice
+	Manager.UpdateProfileSex(chatID, sex)
+
+	Manager.UpdateState(chatID, StateProfileAgeChoice)
 
 	err := Send(
 		bot, chatID, RemoveKeyboard,
@@ -85,9 +86,8 @@ func HandlerAgeChoice(
 ) error {
 	const op = "HandlerAgeChoice"
 
-	userProfile := UserProfile[chatID]
-	userProfile.Birthday = timestamp.ToTimestamp(text)
-	if userProfile.Birthday == "" {
+	birthday := timestamp.ToTimestamp(text)
+	if birthday == "" {
 		err := Send(
 			bot, chatID, RemoveKeyboard,
 			localization.Russian.ProfileQuestions.IncorrectAge,
@@ -97,9 +97,10 @@ func HandlerAgeChoice(
 		}
 		return nil
 	}
-	UserProfile[chatID] = userProfile
+	Manager.UpdateProfileBirthday(chatID, birthday)
 
-	UserState[chatID] = StateProfileText
+	Manager.UpdateState(chatID, StateProfileText)
+
 	err := Send(
 		bot, chatID, RemoveKeyboard,
 		localization.Russian.ProfileQuestions.ProfileText,
@@ -115,11 +116,10 @@ func HandlerProfileText(
 ) error {
 	const op = "HandlerProfileText"
 
-	userProfile := UserProfile[chatID]
-	userProfile.ProfileText = text
-	UserProfile[chatID] = userProfile
+	Manager.UpdateProfileText(chatID, text)
 
-	UserState[chatID] = StateProfilePhoto
+	Manager.UpdateState(chatID, StateProfilePhoto)
+
 	err := Send(
 		bot, chatID, finishProfileKeyboard,
 		localization.Russian.ProfileQuestions.Photo,
@@ -143,13 +143,13 @@ func passwordRule(chatID int64) string {
 }
 
 func HandlerEndPhoto(
-	bot *tgbotapi.BotAPI, chatID int64, text string,
+	bot *tgbotapi.BotAPI, chatID int64,
 ) error {
 	const op = "HandlerEndPhoto"
 
 	// for every text
 
-	userProfile := UserProfile[chatID]
+	userProfile := Manager.GetProfile(chatID)
 	if len(userProfile.Photo) == 0 {
 		err := Send(
 			bot, chatID, nil,
@@ -161,22 +161,19 @@ func HandlerEndPhoto(
 		return nil
 	}
 
-	UserState[chatID] = StateWait
-
-	client, isNotFirstProfile := UserClient[chatID]
+	isNotFirstProfile := Manager.CheckClient(chatID)
 	if !isNotFirstProfile {
 		login := loginRule(chatID)
 		password := passwordRule(chatID)
-		var ID int
-		var err error
-		client, ID, err = bot_client.CreateUser(login, password)
+		client, ID, err := bot_client.CreateUser(login, password)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 
-		UserClient[chatID] = client
-		TelegramUserID[ID] = chatID
+		Manager.UpdateClient(chatID, client)
+		Manager.UpdateTgUserID(chatID, ID)
 	}
+	client := Manager.GetClient(chatID)
 
 	err := bot_client.UpdateProfile(client, userProfile)
 	if err != nil {

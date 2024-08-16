@@ -49,7 +49,7 @@ func main() {
 					}
 				}
 			} else if update.Message.Photo != nil {
-				err = handler_bot.HandlerOnPhoto(bot, update)
+				err = handler_bot.HandlerOnPhoto(update)
 				if err != nil {
 					log.Println(err)
 				}

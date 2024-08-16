@@ -32,7 +32,7 @@ var RemoveKeyboard = tgbotapi.NewRemoveKeyboard(true)
 func HandlerOnStart(bot *tgbotapi.BotAPI, chatID int64) error {
 	const op = "HandlerOnStart"
 
-	UserState[chatID] = StateProfileNameChoice
+	Manager.UpdateState(chatID, StateProfileNameChoice)
 	err := Send(
 		bot, chatID, RemoveKeyboard,
 		localization.Russian.StartMessage,
@@ -54,8 +54,8 @@ var waitScreenKeyboard = tgbotapi.NewReplyKeyboard(
 func HandlerOnWait(bot *tgbotapi.BotAPI, chatID int64) error {
 	const op = "HandlerOnWait"
 
-	_, ok := UserClient[chatID]
-	if !ok {
+	st := Manager.GetState(chatID)
+	if st == StateNonAuthed {
 		err := HandlerOnStart(bot, chatID)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
@@ -63,7 +63,7 @@ func HandlerOnWait(bot *tgbotapi.BotAPI, chatID int64) error {
 		return nil
 	}
 
-	UserState[chatID] = StateWait
+	Manager.UpdateState(chatID, StateWait)
 
 	err := Send(
 		bot, chatID, waitScreenKeyboard,
@@ -87,8 +87,8 @@ var likeScreenKeyboard = tgbotapi.NewReplyKeyboard(
 func HandlerOnFind(bot *tgbotapi.BotAPI, chatID int64) error {
 	const op = "HandlerOnFind"
 
-	client, ok := UserClient[chatID]
-	if !ok {
+	st := Manager.GetState(chatID)
+	if st == StateNonAuthed {
 		err := HandlerOnStart(bot, chatID)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
@@ -96,7 +96,7 @@ func HandlerOnFind(bot *tgbotapi.BotAPI, chatID int64) error {
 		return nil
 	}
 
-	UserState[chatID] = StateLike
+	Manager.UpdateState(chatID, StateLike)
 
 	err := Send(
 		bot, chatID, likeScreenKeyboard,
@@ -106,6 +106,7 @@ func HandlerOnFind(bot *tgbotapi.BotAPI, chatID int64) error {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
+	client := Manager.GetClient(chatID)
 	err = ShowIndexed(client, bot, chatID)
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
@@ -136,7 +137,7 @@ func ShowIndexed(
 		return nil
 	}
 
-	IndexedID[chatID] = indexedID
+	Manager.UpdateIndexed(chatID, indexedID)
 
 	p, err := bot_client.GetProfile(client, indexedID)
 	if err != nil {
@@ -149,15 +150,13 @@ func ShowIndexed(
 }
 
 func HandlerOnPhoto(
-	bot *tgbotapi.BotAPI, update tgbotapi.Update,
+	update tgbotapi.Update,
 ) error {
 	chatID := update.Message.Chat.ID
-	state, ok := UserState[chatID]
-	if ok && state == StateProfilePhoto {
+	state := Manager.GetState(chatID)
+	if state == StateProfilePhoto {
 		photo := update.Message.Photo[len(update.Message.Photo)-1]
-		p := UserProfile[chatID]
-		p.Photo = append(p.Photo, photo.FileID)
-		UserProfile[chatID] = p
+		Manager.UpdateProfilePhoto(chatID, photo.FileID)
 	}
 	return nil
 }
@@ -177,7 +176,7 @@ func HandlerTextStateWait(
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case localization.Russian.WaitScreenKeyboard.ShowProfile:
-		userProfile := UserProfile[chatID]
+		userProfile := Manager.GetProfile(chatID)
 		if err := ShowProfile(bot, userProfile, chatID); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
@@ -189,9 +188,8 @@ func HandlerOnLike(
 	bot *tgbotapi.BotAPI, chatID int64, text string,
 ) error {
 	const op = "HandlerOnLike"
-
-	client := UserClient[chatID]
-	likeID := IndexedID[chatID]
+	client := Manager.GetClient(chatID)
+	likeID := Manager.GetIndexed(chatID)
 	switch text {
 	case localization.Russian.LikeScreenKeyboard.Like:
 		like, err := bot_client.PostLike(client, likeID, true)
@@ -202,7 +200,7 @@ func HandlerOnLike(
 			break
 		}
 
-		notificationChatID := TelegramUserID[like.UserID]
+		notificationChatID := Manager.GetTgUserID(like.UserID)
 		if err = ChangeToStateMatch(bot, notificationChatID); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
@@ -239,16 +237,16 @@ func HandlerTextLikeState(
 	if err := HandlerOnLike(bot, chatID, text); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
-	switch UserState[chatID] {
+	st := Manager.GetState(chatID)
+	switch st {
 	case StateLike:
-		if err := ShowIndexed(
-			UserClient[chatID], bot, chatID,
-		); err != nil {
+		client := Manager.GetClient(chatID)
+		if err := ShowIndexed(client, bot, chatID); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 		return nil
 	case StateLikePreMatch:
-		UserState[chatID] = StateMatch
+		Manager.UpdateState(chatID, StateMatch)
 		if err := HandlerMatch(bot, chatID); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
@@ -267,7 +265,7 @@ var matchScreenKeyboard = tgbotapi.NewReplyKeyboard(
 func ChangeToStateMatch(bot *tgbotapi.BotAPI, chatID int64) error {
 	const op = "ChangeToStateMatch"
 
-	st := UserState[chatID]
+	st := Manager.GetState(chatID)
 	switch st {
 	case StateLike:
 		if err := Send(
@@ -275,7 +273,7 @@ func ChangeToStateMatch(bot *tgbotapi.BotAPI, chatID int64) error {
 		); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-		UserState[chatID] = StateLikePreMatch
+		Manager.UpdateState(chatID, StateLikePreMatch)
 	case StateWait:
 		if err := Send(
 			bot, chatID, matchScreenKeyboard,
@@ -283,7 +281,7 @@ func ChangeToStateMatch(bot *tgbotapi.BotAPI, chatID int64) error {
 		); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-		UserState[chatID] = StateMatch
+		Manager.UpdateState(chatID, StateMatch)
 	default:
 	}
 	return nil
@@ -291,7 +289,7 @@ func ChangeToStateMatch(bot *tgbotapi.BotAPI, chatID int64) error {
 
 func ShowMatch(bot *tgbotapi.BotAPI, chatID int64) (bool, error) {
 	const op = "ShowMatch"
-	client := UserClient[chatID]
+	client := Manager.GetClient(chatID)
 
 	likes, err := bot_client.GetLikes(client)
 	if err != nil {
@@ -301,16 +299,17 @@ func ShowMatch(bot *tgbotapi.BotAPI, chatID int64) (bool, error) {
 		return false, nil
 	}
 	for _, like := range likes {
-		p, err := bot_client.GetProfile(client, like.UserID)
+		var userProfile profile.Profile
+		userProfile, err = bot_client.GetProfile(client, like.UserID)
 		if err != nil {
 			return false, fmt.Errorf("%s: %w", op, err)
 		}
-		if err = ShowProfile(bot, p, chatID); err != nil {
+		if err = ShowProfile(bot, userProfile, chatID); err != nil {
 			return false, fmt.Errorf("%s: %w", op, err)
 		}
 		if err = Send(
 			bot, chatID, matchScreenKeyboard,
-			localization.Russian.Match.Messeage+"@"+p.URL,
+			localization.Russian.Match.Messeage+"@"+userProfile.URL,
 		); err != nil {
 			return false, fmt.Errorf("%s: %w", op, err)
 		}
@@ -351,16 +350,14 @@ func HandlerOnText(
 	const op = "HandlerOnText"
 	text := msg.Text
 
-	q, ok := UserState[chatID]
-	if !ok {
+	st := Manager.GetState(chatID)
+
+	switch st {
+	case StateNonAuthed:
 		err := HandlerOnStart(bot, chatID)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-		return nil
-	}
-
-	switch q {
 	case StateProfileNameChoice:
 		err := HandlerNameChoice(bot, chatID, text, msg.Chat.UserName)
 		if err != nil {
@@ -382,7 +379,7 @@ func HandlerOnText(
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case StateProfilePhoto:
-		err := HandlerEndPhoto(bot, chatID, text)
+		err := HandlerEndPhoto(bot, chatID)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
@@ -406,9 +403,8 @@ func HandlerOnText(
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-	case StateNonAuthed:
 	default:
-		log.Printf("strage state %q", q)
+		log.Printf("strage state %q", st)
 	}
 	return nil
 }
