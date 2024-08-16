@@ -1,9 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"date-app/api/middleware/auth"
 	"date-app/api/v1/indexed"
@@ -26,8 +32,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = db.Ping()
-	if err != nil {
+	if err = db.Ping(); err != nil {
 		log.Fatal(err)
 	}
 
@@ -73,9 +78,31 @@ func main() {
 		auth.CheckAuth(db)(like.Handler(db)),
 	)
 
-	if err = http.ListenAndServe(
-		fmt.Sprintf(":%d", PORT), nil,
-	); err != nil {
-		log.Fatal(err.Error())
+	server := &http.Server{
+		Addr: fmt.Sprintf(":%d", PORT),
 	}
+
+	go func() {
+		if err = server.ListenAndServe(); !errors.Is(
+			err, http.ErrServerClosed,
+		) {
+			log.Fatal(err.Error())
+		}
+		log.Println("ListenAndServe stopped.")
+	}()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+
+	shutdownCtx, shutdownRelease := context.WithTimeout(
+		context.Background(), 10*time.Second,
+	)
+	defer shutdownRelease()
+
+	if err = server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("HTTP shutdown error: %v", err)
+	}
+	log.Println("Server stopped.")
+
 }
