@@ -161,8 +161,8 @@ func HandlerEndPhoto(
 		return nil
 	}
 
-	isNotFirstProfile := Manager.CheckClient(chatID)
-	if !isNotFirstProfile {
+	isFirstProfile := !Manager.CheckClient(chatID)
+	if isFirstProfile {
 		login := loginRule(chatID)
 		password := passwordRule(chatID)
 		client, ID, err := bot_client.CreateUser(login, password)

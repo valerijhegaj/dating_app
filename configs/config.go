@@ -10,9 +10,11 @@ import (
 var config []byte
 
 type main struct {
-	Port    int    `json:"port"`
-	HashKey string `json:"hash_key"`
-	MaxAge  int    `json:"max_age"`
+	Port        int    `json:"port"`
+	HashKey     string `json:"hash_key"`
+	MaxAge      int    `json:"max_age"`
+	TimeToIndex string `json:"time_to_index"`
+	NumToIndex  int    `json:"num_to_index"`
 }
 
 type database struct {

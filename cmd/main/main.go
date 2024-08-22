@@ -22,6 +22,7 @@ import (
 	"date-app/api/v1/session"
 	"date-app/api/v1/user"
 	"date-app/configs"
+	"date-app/internal/indexer"
 	"date-app/internal/storage/postgres"
 )
 
@@ -36,6 +37,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	Indexer := indexer.New(db)
+
 	http.Handle("POST /api/v1/user", user.Handler(db))
 
 	http.Handle(
@@ -46,7 +49,7 @@ func main() {
 	http.Handle("GET /api/v1/profile/{user_id}", profile.GetHandler(db))
 	http.Handle(
 		"POST /api/v1/profile/{user_id}",
-		auth.CheckAuth(db)(profile.PostHandler(db)),
+		auth.CheckAuth(db)(profile.PostHandler(db, Indexer)),
 	)
 
 	http.Handle(
@@ -94,6 +97,8 @@ func main() {
 		shutdownChan <- struct{}{}
 	}()
 
+	Indexer.Start(shutdownChan)
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
@@ -105,6 +110,11 @@ func main() {
 
 	if err = server.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("HTTP shutdown error: %v", err)
+	}
+	<-shutdownChan
+
+	if err = Indexer.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("Indexer shutdown error: %v", err)
 	}
 	<-shutdownChan
 

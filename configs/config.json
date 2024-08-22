@@ -1,8 +1,10 @@
 {
   "main": {
     "port": 8080,
-    "hash_key": "very smart password hashing",
-    "max_age": 2000000
+    "hash_key": "password salt",
+    "max_age": 2000000,
+    "time_to_index": "04:00",
+    "num_to_index": 100
   },
   "database": {
     "host": "localhost",

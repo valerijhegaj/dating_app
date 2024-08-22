@@ -57,4 +57,10 @@ type Storage interface {
 	MakeLike(
 		ctx context.Context, userID, likedUserID int, isLike bool,
 	) (bool, error)
+
+	GetAllUserIDs(ctx context.Context) ([]int, error)
+	GetNewLikes(ctx context.Context, userID int) ([]int, error)
+	GetNewPairs(ctx context.Context, userID int, n int) ([]int, error)
+
+	LoadIndexed(ctx context.Context, userID int, indexedIDs []int) error
 }

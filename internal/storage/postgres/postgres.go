@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"date-app/configs"
 	"date-app/internal/profile"
@@ -20,16 +21,17 @@ type Storage struct {
 func (s *Storage) MakeLike(
 	ctx context.Context, userID, likedUserID int, isLike bool,
 ) (bool, error) {
+	const op = "storage.postgres.MakeLike"
 	query := `SELECT dating_data.make_like($1, $2, $3)`
 	var isAllowed bool
 	err := s.Db.QueryRowContext(
 		ctx, query, userID, likedUserID, isLike,
 	).Scan(&isAllowed)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("%s: %w", op, err)
 	}
 	if !isAllowed {
-		return false, storage.ErrLikeNotIndexed
+		return false, fmt.Errorf("%s: %w", op, storage.ErrLikeNotIndexed)
 	}
 	if !isLike {
 		return false, nil
@@ -44,7 +46,7 @@ func (s *Storage) MakeLike(
 		return false, nil
 	}
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("%s: %w", op, err)
 	}
 	return true, nil
 }
@@ -52,6 +54,7 @@ func (s *Storage) MakeLike(
 func (s *Storage) GetMatches(
 	ctx context.Context, userID int, viewed bool,
 ) ([]profile.Like, error) {
+	const op = "storage.postgres.GetMatches"
 	query := `SELECT l.starred_user_id, 
             CASE WHEN l.time > r.time 
                 THEN l.time 
@@ -67,36 +70,44 @@ func (s *Storage) GetMatches(
 						WHERE l.viewed = $2`
 	rows, err := s.Db.QueryContext(ctx, query, userID, viewed)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer rows.Close()
-	var ans []profile.Like
+	var matches []profile.Like
 	for rows.Next() {
 		var like profile.Like
 		if err = rows.Scan(&like.UserID, &like.Time); err != nil {
-			return ans, err
+			return matches, fmt.Errorf("%s: %w", op, err)
 		}
-		ans = append(ans, like)
+		matches = append(matches, like)
 	}
 	if err = rows.Err(); err != nil {
-		return ans, err
+		return matches, err
 	}
-	return ans, err
+	if err != nil {
+		return matches, fmt.Errorf("%s: %w", op, err)
+	}
+	return matches, nil
 }
 
 func (s *Storage) DeleteNewMatch(
 	ctx context.Context, userID, likedUserID int,
 ) error {
+	const op = "storage.postgres.DeleteNewMatch"
 	query := `UPDATE dating_data.starred_users 
             SET viewed = true 
             WHERE user_id = $1 AND starred_user_id = $2`
 	_, err := s.Db.ExecContext(ctx, query, userID, likedUserID)
-	return err
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
 }
 
 func (s *Storage) GetLikes(
 	ctx context.Context, userID int, isUsersLikes bool,
 ) ([]profile.Like, error) {
+	const op = "storage.postgres.GetLikes"
 	var query string
 	if isUsersLikes {
 		query = `SELECT starred_user_id, time 
@@ -109,33 +120,34 @@ func (s *Storage) GetLikes(
 	}
 	r, err := s.Db.QueryContext(ctx, query, userID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer r.Close()
-	var ans []profile.Like
+	var likes []profile.Like
 	for r.Next() {
 		var like profile.Like
 		if err = r.Scan(&like.UserID, &like.Time); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", op, err)
 		}
-		ans = append(ans, like)
+		likes = append(likes, like)
 	}
 	if err = r.Err(); err != nil {
-		return ans, err
+		return likes, fmt.Errorf("%s: %w", op, err)
 	}
-	return ans, nil
+	return likes, nil
 }
 
 func (s *Storage) GetIndexed(ctx context.Context, userID int) (
 	int, error,
 ) {
+	const op = "storage.postgres.GetIndexed"
 	var indexedID int
 	if err := s.Db.QueryRowContext(
 		ctx,
 		`SELECT indexed_user_id FROM dating_data.indexed_users WHERE user_id = $1 LIMIT 1`,
 		userID,
 	).Scan(&indexedID); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("%s: %w", op, err)
 	}
 	return indexedID, nil
 }
@@ -143,17 +155,19 @@ func (s *Storage) GetIndexed(ctx context.Context, userID int) (
 func (s *Storage) GetProfile(
 	ctx context.Context, userID int,
 ) (profile.Profile, error) {
-	var ans profile.Profile
+	const op = "storage.postgres.GetProfile"
+	var userProfile profile.Profile
 	var profileID int
 	query := `SELECT profile_id, profile_text, sex, birthday, name, url
 				   FROM dating_data.profile
 				   WHERE user_id = $1`
 	err := s.Db.QueryRowContext(ctx, query, userID).Scan(
-		&profileID, &ans.ProfileText, &ans.Sex, &ans.Birthday, &ans.Name,
-		&ans.URL,
+		&profileID, &userProfile.ProfileText, &userProfile.Sex,
+		&userProfile.Birthday, &userProfile.Name,
+		&userProfile.URL,
 	)
 	if err != nil {
-		return ans, err
+		return userProfile, fmt.Errorf("%s: %w", op, err)
 	}
 	query = `SELECT image_url
 					 FROM dating_data.profile_photo
@@ -162,40 +176,41 @@ func (s *Storage) GetProfile(
 				   WHERE profile_id = $1`
 	rows, err := s.Db.QueryContext(ctx, query, profileID)
 	if err != nil {
-		return ans, err
+		return userProfile, fmt.Errorf("%s: %w", op, err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var URL string
 		err = rows.Scan(&URL)
 		if err != nil {
-			return ans, err
+			return userProfile, fmt.Errorf("%s: %w", op, err)
 		}
-		ans.Photo = append(ans.Photo, URL)
+		userProfile.Photo = append(userProfile.Photo, URL)
 	}
 	if err = rows.Err(); err != nil {
-		return ans, err
+		return userProfile, fmt.Errorf("%s: %w", op, err)
 	}
-	return ans, nil
+	return userProfile, nil
 }
 
 func (s *Storage) AddProfile(
 	ctx context.Context, userID int, profile profile.Profile,
 ) error {
+	const op = "storage.postgres.AddProfile"
 	var profileID int
 	if err := s.Db.QueryRowContext(
 		ctx, `SELECT dating_data.create_profile($1, $2, $3, $4, $5, $6)`,
 		userID, profile.ProfileText, profile.Sex, profile.Birthday,
 		profile.Name, profile.URL,
 	).Scan(&profileID); err != nil {
-		return err
+		return fmt.Errorf("%s: %w", op, err)
 	}
 	for _, url := range profile.Photo {
 		_, err := s.Db.ExecContext(
 			ctx, `CALL dating_data.add_new_photo($1, $2)`, profileID, url,
 		)
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %w", op, err)
 		}
 	}
 	return nil
@@ -204,6 +219,7 @@ func (s *Storage) AddProfile(
 func (s *Storage) AddToken(
 	ctx context.Context, userID int, token string, maxAge int,
 ) error {
+	const op = "storage.postgres.AddToken"
 	query := `INSERT INTO dating_data.auth
 						(user_id, token_hash, end_time) VALUES 
 						($1, $2, NOW() + $3 * interval '1 second')`
@@ -211,12 +227,16 @@ func (s *Storage) AddToken(
 		ctx, query,
 		userID, token, maxAge,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
 }
 
 func (s *Storage) CheckPassword(
 	ctx context.Context, login string, passwordHash string,
 ) (int, error) {
+	const op = "storage.postgres.CheckPassword"
 	var realPasswordHash string
 	var userID int
 	query := `SELECT user_id, password_hash
@@ -227,13 +247,17 @@ func (s *Storage) CheckPassword(
 		login,
 	).Scan(&userID, &realPasswordHash)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, storage.ErrLoginOrPasswordWrong
+		return 0, fmt.Errorf(
+			"%s: %w", op, storage.ErrLoginOrPasswordWrong,
+		)
 	}
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("%s: %w", op, err)
 	}
 	if passwordHash != realPasswordHash {
-		return 0, storage.ErrLoginOrPasswordWrong
+		return 0, fmt.Errorf(
+			"%s: %w", op, storage.ErrLoginOrPasswordWrong,
+		)
 	}
 	return userID, nil
 }
@@ -241,6 +265,7 @@ func (s *Storage) CheckPassword(
 func (s *Storage) CheckToken(
 	ctx context.Context, userID int, tokenHash string,
 ) error {
+	const op = "storage.postgres.CheckToken"
 	query := `SELECT token_hash 
 						FROM dating_data.auth 
 						WHERE user_id = $1 AND token_hash = $2`
@@ -249,14 +274,18 @@ func (s *Storage) CheckToken(
 		userID, tokenHash,
 	).Scan(&tokenHash)
 	if errors.Is(err, sql.ErrNoRows) {
-		return storage.ErrTokenNotFound
+		return fmt.Errorf("%s: %w", op, storage.ErrTokenNotFound)
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
 }
 
 func (s *Storage) CreateUser(
 	ctx context.Context, login, password, phoneNumber, email string,
 ) error {
+	const op = "storage.postgres.CreateUser"
 	query := `INSERT INTO dating_data.user 
 						(login, password_hash, phone_number, email) VALUES 
 						($1, $2, $3, $4)`
@@ -264,7 +293,155 @@ func (s *Storage) CreateUser(
 		ctx, query,
 		login, password, phoneNumber, email,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
+}
+
+func (s *Storage) GetAllUserIDs(ctx context.Context) ([]int, error) {
+	const op = "storage.postgres.GetAllUserIDs"
+	var userIDs []int
+
+	getUserIDs := `SELECT user_id
+								 FROM dating_data.profile;`
+	rows, err := s.Db.QueryContext(ctx, getUserIDs)
+	if err != nil {
+		return userIDs, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID int
+		err = rows.Scan(&userID)
+		if err != nil {
+			return userIDs, fmt.Errorf("%s: %w", op, err)
+		}
+		userIDs = append(userIDs, userID)
+	}
+	if err = rows.Err(); err != nil {
+		return userIDs, fmt.Errorf("%s: %w", op, err)
+	}
+	return userIDs, nil
+}
+
+func (s *Storage) GetNewLikes(ctx context.Context, userID int) (
+	[]int, error,
+) {
+	const op = "storage.postgres.GetNewLikes"
+	var likedUserIDs []int
+
+	getLiked := `SELECT user_id
+						   FROM dating_data.starred_users
+							 WHERE starred_user_id = $1
+                 AND is_liked = true
+                 AND user_id NOT IN (
+    							SELECT starred_user_id
+    							FROM dating_data.starred_users
+    							WHERE user_id = $1);`
+	rows, err := s.Db.QueryContext(ctx, getLiked, userID)
+	if err != nil {
+		return likedUserIDs, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var pairID int
+		err = rows.Scan(&pairID)
+		if err != nil {
+			return likedUserIDs, fmt.Errorf("%s: %w", op, err)
+		}
+		likedUserIDs = append(likedUserIDs, pairID)
+	}
+	if err = rows.Err(); err != nil {
+		return likedUserIDs, fmt.Errorf("%s: %w", op, err)
+	}
+	return likedUserIDs, nil
+}
+
+func (s *Storage) GetNewPairs(
+	ctx context.Context, userID int, n int,
+) ([]int, error) {
+	const op = "storage.postgres.GetNewPairs"
+	var newPairIDs []int
+
+	userProfile, err := s.GetProfile(ctx, userID)
+	if err != nil {
+		return newPairIDs, fmt.Errorf("%s: %w", op, err)
+	}
+	pairSex := !userProfile.Sex
+
+	getNewPairs := `SELECT profile.user_id
+									FROM dating_data.profile
+									LEFT JOIN dating_data.user 
+									ON profile.user_id = "user".user_id
+									WHERE profile.user_id != $1
+  									AND sex = $3
+  									AND profile.user_id NOT IN (
+    									SELECT starred_user_id
+    									FROM dating_data.starred_users
+    									WHERE user_id = $1
+  									)
+  									AND profile.user_id NOT IN (
+      								SELECT user_id
+      								FROM dating_data.starred_users
+      								WHERE starred_user_id = $1
+  									)
+									ORDER BY last_online DESC
+									LIMIT $2;`
+	rows, err := s.Db.QueryContext(ctx, getNewPairs, userID, n, pairSex)
+	if err != nil {
+		return newPairIDs, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var pairID int
+		err = rows.Scan(&pairID)
+		if err != nil {
+			return newPairIDs, fmt.Errorf("%s: %w", op, err)
+		}
+		newPairIDs = append(newPairIDs, pairID)
+	}
+	if err = rows.Err(); err != nil {
+		return newPairIDs, fmt.Errorf("%s: %w", op, err)
+	}
+	return newPairIDs, nil
+}
+
+func (s *Storage) LoadIndexed(
+	ctx context.Context, userID int, indexedIDs []int,
+) error {
+	const op = "storage.postgres.GetNewPairs"
+
+	removeIndexed := `DELETE FROM dating_data.indexed_users 
+										WHERE user_id = $1;`
+	_, err := s.Db.ExecContext(ctx, removeIndexed, userID)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	loadIndexed := `INSERT INTO dating_data.indexed_users (user_id, indexed_user_id) VALUES `
+	for i := range indexedIDs {
+		if i == 0 {
+			loadIndexed += "($1, $2)"
+			continue
+		}
+		loadIndexed += ", ($1, $" + strconv.Itoa(i+2) + ")"
+	}
+	loadIndexed += ";"
+
+	args := append([]any{}, userID)
+	for _, indexedID := range indexedIDs {
+		args = append(args, indexedID)
+	}
+
+	if _, err = s.Db.ExecContext(
+		ctx, loadIndexed, args...,
+	); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
 }
 
 func (s *Storage) Ping() error {
