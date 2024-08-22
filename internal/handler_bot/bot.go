@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 
 	"date-app/assets/localization"
 	"date-app/internal/handler_bot/bot_client"
 	"date-app/internal/profile"
 	"date-app/internal/timestamp"
+	"date-app/internal/token"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -117,7 +119,7 @@ func HandlerOnFind(bot *tgbotapi.BotAPI, chatID int64) error {
 func ShowIndexed(
 	client http.Client, bot *tgbotapi.BotAPI, chatID int64,
 ) error {
-	const op = "HandlerOnIndexed"
+	const op = "ShowIndexed"
 
 	indexedID, err := bot_client.GetIndexed(client)
 	if err != nil {
@@ -150,13 +152,22 @@ func ShowIndexed(
 }
 
 func HandlerOnPhoto(
-	update tgbotapi.Update,
+	bot *tgbotapi.BotAPI, update tgbotapi.Update,
 ) error {
+	const op = "HandlerOnPhoto"
+
 	chatID := update.Message.Chat.ID
 	state := Manager.GetState(chatID)
 	if state == StateProfilePhoto {
 		photo := update.Message.Photo[len(update.Message.Photo)-1]
 		Manager.UpdateProfilePhoto(chatID, photo.FileID)
+		err := Send(
+			bot, chatID, nil,
+			localization.Russian.ProfileQuestions.FinishMessage,
+		)
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 	}
 	return nil
 }
@@ -176,7 +187,20 @@ func HandlerTextStateWait(
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case localization.Russian.WaitScreenKeyboard.ShowProfile:
-		userProfile := Manager.GetProfile(chatID)
+		client := Manager.GetClient(chatID)
+		u, err := url.Parse(bot_client.URL)
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+		cookies := client.Jar.Cookies(u)
+		_, ID, err := token.GetFromCookie(cookies[0])
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+		userProfile, err := bot_client.GetProfile(client, ID)
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 		if err := ShowProfile(bot, userProfile, chatID); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
