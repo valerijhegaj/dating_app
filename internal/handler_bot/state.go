@@ -47,6 +47,12 @@ func (m *MemoryManager) GetState(tgUserID int64) int {
 	return st
 }
 
+func (m *MemoryManager) UpdateProfile(
+	tgUserID int64, p profile.Profile,
+) {
+	m.userProfile[tgUserID] = p
+}
+
 func (m *MemoryManager) UpdateProfileText(
 	tgUserID int64, profileText string,
 ) {

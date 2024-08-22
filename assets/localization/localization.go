@@ -26,16 +26,17 @@ type localization struct {
 	} `json:"like_screen_keyboard"`
 	NoIndexedLeft    string `json:"no_indexed_left"`
 	ProfileQuestions struct {
-		Sex          string `json:"sex"`
-		Man          string `json:"man"`
-		NotMan       string `json:"not_man"`
-		IncorrectSex string `json:"incorrect_sex"`
-		Age          string `json:"age"`
-		IncorrectAge string `json:"incorrect_age"`
-		ProfileText  string `json:"profile_text"`
-		Photo        string `json:"photo"`
-		NoPhoto      string `json:"no_photo"`
-		Finish       string `json:"finish"`
+		Sex           string `json:"sex"`
+		Man           string `json:"man"`
+		NotMan        string `json:"not_man"`
+		IncorrectSex  string `json:"incorrect_sex"`
+		Age           string `json:"age"`
+		IncorrectAge  string `json:"incorrect_age"`
+		ProfileText   string `json:"profile_text"`
+		Photo         string `json:"photo"`
+		NoPhoto       string `json:"no_photo"`
+		FinishMessage string `json:"finish_message"`
+		Finish        string `json:"finish"`
 	} `json:"profile_questions"`
 	Match struct {
 		LikeScreen  string `json:"like_screen"`

@@ -151,6 +151,7 @@ func HandlerEndPhoto(
 
 	userProfile := Manager.GetProfile(chatID)
 	if len(userProfile.Photo) == 0 {
+		Manager.UpdateProfile(chatID, userProfile)
 		err := Send(
 			bot, chatID, nil,
 			localization.Russian.ProfileQuestions.NoPhoto,

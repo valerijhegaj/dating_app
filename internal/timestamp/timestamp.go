@@ -7,7 +7,7 @@ import (
 
 func ToTimestamp(age string) string {
 	ageInt, err := strconv.Atoi(age)
-	if err != nil {
+	if err != nil || ageInt > 150 {
 		return ""
 	}
 	today := time.Now()
