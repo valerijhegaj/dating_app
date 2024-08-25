@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"date-app/internal/indexer"
 	"date-app/internal/profile"
 	"date-app/internal/storage"
 )
@@ -33,10 +34,12 @@ func GetHandler(db storage.Storage) http.HandlerFunc {
 	}
 }
 
-func PostHandler(db storage.Storage) http.HandlerFunc {
+func PostHandler(
+	db storage.Storage, Indexer indexer.Indexer,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := r.PathValue("user_id")
-		ID := r.Context().Value("userID").(int)
+		sessionUserID := r.Context().Value("userID").(int)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -47,16 +50,25 @@ func PostHandler(db storage.Storage) http.HandlerFunc {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		uID, err := strconv.Atoi(userID)
+		ProfileToChangeUserID, err := strconv.Atoi(userID)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if uID != ID {
+		// forbidden when other user change profile
+		if ProfileToChangeUserID != sessionUserID {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		if err = db.AddProfile(r.Context(), ID, p); err != nil {
+		if err = db.AddProfile(
+			r.Context(), sessionUserID, p,
+		); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if err = Indexer.IndexUser(
+			r.Context(), sessionUserID,
+		); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}

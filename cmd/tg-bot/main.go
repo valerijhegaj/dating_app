@@ -23,25 +23,27 @@ func main() {
 
 	for update := range updates {
 		if update.Message != nil {
+			chatID := update.Message.Chat.ID
 			if update.Message.Text != "" {
-				switch update.Message.Text {
+				text := update.Message.Text
+				switch text {
 				case "/start":
-					err = handler_bot.HandlerOnStart(bot, update)
+					err = handler_bot.HandlerOnStart(bot, chatID)
 					if err != nil {
 						log.Println(err)
 					}
 				case "/wait":
-					err = handler_bot.HandlerOnWait(bot, update)
+					err = handler_bot.HandlerOnWait(bot, chatID)
 					if err != nil {
 						log.Println(err)
 					}
 				case "/find":
-					err = handler_bot.HandlerOnFind(bot, update)
+					err = handler_bot.HandlerOnFind(bot, chatID)
 					if err != nil {
 						log.Println(err)
 					}
 				default:
-					err = handler_bot.HandlerOnText(bot, update)
+					err = handler_bot.HandlerOnText(bot, chatID, update.Message)
 					if err != nil {
 						log.Println(err)
 					}

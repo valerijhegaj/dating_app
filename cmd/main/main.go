@@ -1,9 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"date-app/api/middleware/auth"
 	"date-app/api/v1/indexed"
@@ -16,6 +22,7 @@ import (
 	"date-app/api/v1/session"
 	"date-app/api/v1/user"
 	"date-app/configs"
+	"date-app/internal/indexer"
 	"date-app/internal/storage/postgres"
 )
 
@@ -26,10 +33,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = db.Ping()
-	if err != nil {
+	if err = db.Ping(); err != nil {
 		log.Fatal(err)
 	}
+
+	Indexer := indexer.New(db)
 
 	http.Handle("POST /api/v1/user", user.Handler(db))
 
@@ -41,7 +49,7 @@ func main() {
 	http.Handle("GET /api/v1/profile/{user_id}", profile.GetHandler(db))
 	http.Handle(
 		"POST /api/v1/profile/{user_id}",
-		auth.CheckAuth(db)(profile.PostHandler(db)),
+		auth.CheckAuth(db)(profile.PostHandler(db, Indexer)),
 	)
 
 	http.Handle(
@@ -65,7 +73,7 @@ func main() {
 	)
 	http.Handle(
 		"POST /api/v1/matches/actual",
-		auth.CheckAuth(db)(actual.DeleteHandler(db)),
+		auth.CheckAuth(db)(actual.PostHandler(db)),
 	)
 
 	http.Handle(
@@ -73,9 +81,46 @@ func main() {
 		auth.CheckAuth(db)(like.Handler(db)),
 	)
 
-	if err = http.ListenAndServe(
-		fmt.Sprintf(":%d", PORT), nil,
-	); err != nil {
-		log.Fatal(err.Error())
+	server := &http.Server{
+		Addr: fmt.Sprintf(":%d", PORT),
 	}
+
+	shutdownChan := make(chan struct{})
+
+	go func() {
+		if err = server.ListenAndServe(); !errors.Is(
+			err, http.ErrServerClosed,
+		) {
+			log.Fatal(err.Error())
+		}
+		log.Println("ListenAndServe stopped.")
+		shutdownChan <- struct{}{}
+	}()
+
+	Indexer.Start(shutdownChan)
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+
+	shutdownCtx, shutdownRelease := context.WithTimeout(
+		context.Background(), 10*time.Second,
+	)
+	defer shutdownRelease()
+
+	if err = server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("HTTP shutdown error: %v", err)
+	}
+	<-shutdownChan
+
+	if err = Indexer.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("Indexer shutdown error: %v", err)
+	}
+	<-shutdownChan
+
+	if err = db.Close(); err != nil {
+		log.Fatalf("DB close error: %v", err)
+	}
+	log.Println("Server stopped.")
+
 }

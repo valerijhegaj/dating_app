@@ -6,6 +6,7 @@ type Profile struct {
 	Birthday    string   `json:"birthday"`
 	Name        string   `json:"name"`
 	Photo       []string `json:"photo"`
+	URL         string   `json:"url"`
 }
 
 type Like struct {

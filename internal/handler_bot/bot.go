@@ -1,33 +1,25 @@
 package handler_bot
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
-	"strconv"
 
 	"date-app/assets/localization"
-	"date-app/configs"
-	"date-app/internal/handler_bot/state"
-	"date-app/internal/hash"
+	"date-app/internal/handler_bot/bot_client"
 	"date-app/internal/profile"
 	"date-app/internal/timestamp"
 	"date-app/internal/token"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-var URL = "http://" + configs.Config.TgBot.Host + ":" + strconv.Itoa(configs.Config.Main.Port)
-
 func Send(
 	bot *tgbotapi.BotAPI, chatID int64, replyMarkup interface{},
 	text string,
 ) error {
 	const op = "Send"
+
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ReplyMarkup = replyMarkup
 	_, err := bot.Send(msg)
@@ -37,16 +29,14 @@ func Send(
 	return nil
 }
 
-var removeKeyboard = tgbotapi.NewRemoveKeyboard(true)
+var RemoveKeyboard = tgbotapi.NewRemoveKeyboard(true)
 
-func HandlerOnStart(
-	bot *tgbotapi.BotAPI, update tgbotapi.Update,
-) error {
+func HandlerOnStart(bot *tgbotapi.BotAPI, chatID int64) error {
 	const op = "HandlerOnStart"
-	chatID := update.Message.Chat.ID
-	state.State[chatID] = state.State2
+
+	Manager.UpdateState(chatID, StateProfileNameChoice)
 	err := Send(
-		bot, chatID, removeKeyboard,
+		bot, chatID, RemoveKeyboard,
 		localization.Russian.StartMessage,
 	)
 	if err != nil {
@@ -63,20 +53,20 @@ var waitScreenKeyboard = tgbotapi.NewReplyKeyboard(
 	),
 )
 
-func HandlerOnWait(
-	bot *tgbotapi.BotAPI, update tgbotapi.Update,
-) error {
+func HandlerOnWait(bot *tgbotapi.BotAPI, chatID int64) error {
 	const op = "HandlerOnWait"
-	chatID := update.Message.Chat.ID
-	_, ok := state.UserID[chatID]
-	if !ok {
-		err := HandlerOnStart(bot, update)
+
+	st := Manager.GetState(chatID)
+	if st == StateNonAuthed {
+		err := HandlerOnStart(bot, chatID)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 		return nil
 	}
-	state.State[chatID] = state.State7
+
+	Manager.UpdateState(chatID, StateWait)
+
 	err := Send(
 		bot, chatID, waitScreenKeyboard,
 		localization.Russian.WaitMessage,
@@ -96,20 +86,20 @@ var likeScreenKeyboard = tgbotapi.NewReplyKeyboard(
 	),
 )
 
-func HandlerOnFind(
-	bot *tgbotapi.BotAPI, update tgbotapi.Update,
-) error {
+func HandlerOnFind(bot *tgbotapi.BotAPI, chatID int64) error {
 	const op = "HandlerOnFind"
-	chatID := update.Message.Chat.ID
-	client, ok := state.UserID[chatID]
-	if !ok {
-		err := HandlerOnStart(bot, update)
+
+	st := Manager.GetState(chatID)
+	if st == StateNonAuthed {
+		err := HandlerOnStart(bot, chatID)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 		return nil
 	}
-	state.State[chatID] = state.State8
+
+	Manager.UpdateState(chatID, StateLike)
+
 	err := Send(
 		bot, chatID, likeScreenKeyboard,
 		localization.Russian.LikeScreenMessage,
@@ -118,7 +108,8 @@ func HandlerOnFind(
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	err = ShowIndexed(client, bot, update)
+	client := Manager.GetClient(chatID)
+	err = ShowIndexed(client, bot, chatID)
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
@@ -126,68 +117,35 @@ func HandlerOnFind(
 }
 
 func ShowIndexed(
-	client http.Client, bot *tgbotapi.BotAPI, update tgbotapi.Update,
+	client http.Client, bot *tgbotapi.BotAPI, chatID int64,
 ) error {
-	const op = "HandlerOnIndexed"
-	r, err := client.Get(URL + "/api/v1/indexed")
+	const op = "ShowIndexed"
+
+	indexedID, err := bot_client.GetIndexed(client)
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
-	chatID := update.Message.Chat.ID
-	if r.StatusCode == http.StatusForbidden {
+	if indexedID == 0 {
 		err = Send(
 			bot, chatID, nil, localization.Russian.NoIndexedLeft,
 		)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-		err = HandlerOnWait(bot, update)
-		if err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
-		err = r.Body.Close()
+		err = HandlerOnWait(bot, chatID)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 		return nil
 	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		_ = r.Body.Close()
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	err = r.Body.Close()
+
+	Manager.UpdateIndexed(chatID, indexedID)
+
+	p, err := bot_client.GetProfile(client, indexedID)
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
-	var x struct {
-		UserID int `json:"user_id"`
-	}
-	err = json.Unmarshal(body, &x)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	state.IndexedID[chatID] = x.UserID
-	r, err = client.Get(URL + "/api/v1/profile/" + strconv.Itoa(x.UserID))
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	body, err = io.ReadAll(r.Body)
-	if err != nil {
-		_ = r.Body.Close()
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	err = r.Body.Close()
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	var p profile.Profile
-	err = json.Unmarshal(body, &p)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	err = ShowProfile(bot, p, chatID)
-	if err != nil {
+	if err = ShowProfile(bot, p, chatID); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 	return nil
@@ -196,323 +154,281 @@ func ShowIndexed(
 func HandlerOnPhoto(
 	bot *tgbotapi.BotAPI, update tgbotapi.Update,
 ) error {
+	const op = "HandlerOnPhoto"
+
 	chatID := update.Message.Chat.ID
-	if state.State[chatID] == state.State6 {
+	state := Manager.GetState(chatID)
+	if state == StateProfilePhoto {
 		photo := update.Message.Photo[len(update.Message.Photo)-1]
-		p := state.Data[chatID]
-		p.Photo = append(p.Photo, photo.FileID)
-		state.Data[chatID] = p
-	}
-	return nil
-}
-
-var finishProfileKeyboard = tgbotapi.NewReplyKeyboard(
-	tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton(localization.Russian.ProfileQuestions.Finish),
-	),
-)
-
-var sexKeyboard = tgbotapi.NewReplyKeyboard(
-	tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton(localization.Russian.ProfileQuestions.Man),
-		tgbotapi.NewKeyboardButton(localization.Russian.ProfileQuestions.NotMan),
-	),
-)
-
-func HandlerQ2(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
-	const op = "HandlerQ2"
-	chatID := update.Message.Chat.ID
-	state.Data[chatID] = profile.Profile{Name: update.Message.Text}
-	state.State[chatID] = state.State3
-	err := Send(
-		bot, chatID, sexKeyboard,
-		localization.Russian.ProfileQuestions.Sex,
-	)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	return nil
-}
-
-func HandlerQ3(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
-	const op = "HandlerQ3"
-	chatID := update.Message.Chat.ID
-	p := state.Data[chatID]
-	if update.Message.Text == localization.Russian.ProfileQuestions.Man {
-		p.Sex = true
-	} else if update.Message.Text == localization.Russian.ProfileQuestions.NotMan {
-		p.Sex = false
-	} else {
+		Manager.UpdateProfilePhoto(chatID, photo.FileID)
 		err := Send(
 			bot, chatID, nil,
-			localization.Russian.ProfileQuestions.IncorrectSex,
+			localization.Russian.ProfileQuestions.FinishMessage,
 		)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-		return nil
-	}
-	state.Data[chatID] = p
-	state.State[chatID] = state.State4
-	err := Send(
-		bot, chatID, removeKeyboard,
-		localization.Russian.ProfileQuestions.Age,
-	)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
 	}
 	return nil
 }
 
-func HandlerQ4(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
-	const op = "HandlerQ4"
-	chatID := update.Message.Chat.ID
-	p := state.Data[chatID]
-	p.Birthday = timestamp.ToTimestamp(update.Message.Text)
-	if p.Birthday == "" {
-		err := Send(
-			bot, chatID, removeKeyboard,
-			localization.Russian.ProfileQuestions.IncorrectAge,
-		)
+func HandlerTextStateWait(
+	bot *tgbotapi.BotAPI, chatID int64, text string,
+) error {
+	const op = "HandlerTextStateWait"
+
+	switch text {
+	case localization.Russian.WaitScreenKeyboard.Find:
+		if err := HandlerOnFind(bot, chatID); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+	case localization.Russian.WaitScreenKeyboard.ChangeProfile:
+		if err := HandlerOnStart(bot, chatID); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+	case localization.Russian.WaitScreenKeyboard.ShowProfile:
+		client := Manager.GetClient(chatID)
+		u, err := url.Parse(bot_client.URL)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-		return nil
-	}
-	state.Data[chatID] = p
-	state.State[chatID] = state.State5
-	err := Send(
-		bot, chatID, removeKeyboard,
-		localization.Russian.ProfileQuestions.ProfileText,
-	)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	return nil
-}
-
-func HandlerQ5(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
-	const op = "HandlerQ5"
-	chatID := update.Message.Chat.ID
-	p := state.Data[chatID]
-	p.ProfileText = update.Message.Text
-	state.Data[chatID] = p
-	state.State[chatID] = state.State6
-	err := Send(
-		bot, chatID, finishProfileKeyboard,
-		localization.Russian.ProfileQuestions.Photo,
-	)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	return nil
-}
-
-func HandlerQ6(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
-	const op = "HandlerQ6"
-	chatID := update.Message.Chat.ID
-	p := state.Data[chatID]
-	if len(p.Photo) == 0 {
-		err := Send(
-			bot, chatID, nil,
-			localization.Russian.ProfileQuestions.NoPhoto,
-		)
+		cookies := client.Jar.Cookies(u)
+		_, ID, err := token.GetFromCookie(cookies[0])
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-		return nil
-	}
-	state.State[chatID] = state.State7
-
-	var err error
-	client := http.Client{}
-	client.Jar, err = cookiejar.New(nil)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	body := fmt.Sprintf(
-		`{"login":"%s", "password":"%s"}`,
-		"tg"+strconv.FormatInt(chatID, 16),
-		hash.Calculate(
-			"tg"+strconv.FormatInt(
-				chatID, 16,
-			)+configs.Config.Main.HashKey,
-		),
-	)
-	r, err := client.Post(
-		URL+"/api/v1/user", "", bytes.NewReader([]byte(body)),
-	)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	err = r.Body.Close()
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	r, err = client.Post(
-		URL+"/api/v1/session", "", bytes.NewReader([]byte(body)),
-	)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	err = r.Body.Close()
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	u, err := url.Parse(URL)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	client.Jar.SetCookies(u, r.Cookies())
-	_, ID, err := token.GetFromCookie(r.Cookies()[0])
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	state.UserID[chatID] = client
-	profileData, err := json.Marshal(p)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	r, err = client.Post(
-		URL+"/api/v1/profile/"+strconv.Itoa(ID), "",
-		bytes.NewReader(profileData),
-	)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	err = r.Body.Close()
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	err = ShowProfile(bot, p, chatID)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	err = HandlerOnWait(bot, update)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	return nil
-}
-
-func HandlerQ7(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
-	const op = "HandlerQ7"
-	if update.Message.Text == localization.Russian.WaitScreenKeyboard.Find {
-		err := HandlerOnFind(bot, update)
+		userProfile, err := bot_client.GetProfile(client, ID)
 		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+		if err := ShowProfile(bot, userProfile, chatID); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	}
 	return nil
 }
 
-func HandlerQ8(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
-	const op = "HandlerQ8"
-	chatID := update.Message.Chat.ID
-	client := state.UserID[chatID]
-	indexedID := strconv.Itoa(state.IndexedID[chatID])
-	switch update.Message.Text {
+func HandlerOnLike(
+	bot *tgbotapi.BotAPI, chatID int64, text string,
+) error {
+	const op = "HandlerOnLike"
+	client := Manager.GetClient(chatID)
+	likeID := Manager.GetIndexed(chatID)
+	switch text {
 	case localization.Russian.LikeScreenKeyboard.Like:
-		r, err := client.Post(
-			URL+"/api/v1/like/"+indexedID+"?is_like=1", "",
-			bytes.NewReader(nil),
-		)
+		like, err := bot_client.PostLike(client, likeID, true)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-		err = r.Body.Close()
-		if err != nil {
+		if like.UserID == 0 {
+			break
+		}
+
+		notificationChatID := Manager.GetTgUserID(like.UserID)
+		if err = ChangeToStateMatch(bot, notificationChatID); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
+		if err = ChangeToStateMatch(bot, chatID); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+
 	case localization.Russian.LikeScreenKeyboard.Wait:
-		err := HandlerOnWait(bot, update)
+		err := HandlerOnWait(bot, chatID)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 		return nil
 	case localization.Russian.LikeScreenKeyboard.Dislike:
-		r, err := client.Post(
-			URL+"/api/v1/like/"+indexedID+"?is_like=0", "",
-			bytes.NewReader(nil),
-		)
-		if err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
-		err = r.Body.Close()
+		_, err := bot_client.PostLike(client, likeID, false)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case localization.Russian.LikeScreenKeyboard.Report:
 		// not implemented
-		r, err := client.Post(
-			URL+"/api/v1/like/"+indexedID+"?is_like=0", "",
-			bytes.NewReader(nil),
-		)
-		if err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
-		err = r.Body.Close()
+		_, err := bot_client.PostLike(client, likeID, false)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	}
-	err := ShowIndexed(client, bot, update)
+	return nil
+}
+
+func HandlerTextLikeState(
+	bot *tgbotapi.BotAPI, chatID int64, text string,
+) error {
+	const op = "HandlerTextLikeState"
+
+	if err := HandlerOnLike(bot, chatID, text); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	st := Manager.GetState(chatID)
+	switch st {
+	case StateLike:
+		client := Manager.GetClient(chatID)
+		if err := ShowIndexed(client, bot, chatID); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+		return nil
+	case StateLikePreMatch:
+		Manager.UpdateState(chatID, StateMatch)
+		if err := HandlerMatch(bot, chatID); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%s: strange state", op)
+	}
+}
+
+var matchScreenKeyboard = tgbotapi.NewReplyKeyboard(
+	tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton(localization.Russian.Match.Next),
+	),
+)
+
+func ChangeToStateMatch(bot *tgbotapi.BotAPI, chatID int64) error {
+	const op = "ChangeToStateMatch"
+
+	st := Manager.GetState(chatID)
+	switch st {
+	case StateLike:
+		if err := Send(
+			bot, chatID, nil, localization.Russian.Match.LikeScreen,
+		); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+		Manager.UpdateState(chatID, StateLikePreMatch)
+	case StateWait:
+		if err := Send(
+			bot, chatID, matchScreenKeyboard,
+			localization.Russian.Match.WaitScreen,
+		); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+		Manager.UpdateState(chatID, StateMatch)
+	default:
+	}
+	return nil
+}
+
+func ShowMatch(bot *tgbotapi.BotAPI, chatID int64) (bool, error) {
+	const op = "ShowMatch"
+	client := Manager.GetClient(chatID)
+
+	likes, err := bot_client.GetLikes(client)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", op, err)
+	}
+	if len(likes) == 0 {
+		return false, nil
+	}
+	for _, like := range likes {
+		var userProfile profile.Profile
+		userProfile, err = bot_client.GetProfile(client, like.UserID)
+		if err != nil {
+			return false, fmt.Errorf("%s: %w", op, err)
+		}
+		if err = ShowProfile(bot, userProfile, chatID); err != nil {
+			return false, fmt.Errorf("%s: %w", op, err)
+		}
+		if err = Send(
+			bot, chatID, matchScreenKeyboard,
+			localization.Russian.Match.Messeage+"@"+userProfile.URL,
+		); err != nil {
+			return false, fmt.Errorf("%s: %w", op, err)
+		}
+		if err = bot_client.PostProfileViewed(
+			client, like.UserID,
+		); err != nil {
+			return false, fmt.Errorf("%s: %w", op, err)
+		}
+	}
+
+	return false, nil
+}
+
+func HandlerMatch(bot *tgbotapi.BotAPI, chatID int64) error {
+	const op = "HandlerMatch"
+
+	wasMatch, err := ShowMatch(bot, chatID)
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
+	}
+	if !wasMatch {
+		if err = Send(
+			bot, chatID, RemoveKeyboard,
+			localization.Russian.Match.FinishMatch,
+		); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+		if err = HandlerOnWait(bot, chatID); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
 	}
 	return nil
 }
 
 func HandlerOnText(
-	bot *tgbotapi.BotAPI, update tgbotapi.Update,
+	bot *tgbotapi.BotAPI, chatID int64, msg *tgbotapi.Message,
 ) error {
 	const op = "HandlerOnText"
-	chatID := update.Message.Chat.ID
-	q, ok := state.State[chatID]
-	if !ok {
-		err := HandlerOnStart(bot, update)
+	text := msg.Text
+
+	st := Manager.GetState(chatID)
+
+	switch st {
+	case StateNonAuthed:
+		err := HandlerOnStart(bot, chatID)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-	}
-	switch q {
-	case state.State2:
-		err := HandlerQ2(bot, update)
+	case StateProfileNameChoice:
+		err := HandlerNameChoice(bot, chatID, text, msg.Chat.UserName)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-	case state.State3:
-		err := HandlerQ3(bot, update)
+	case StateProfileSexChoice:
+		err := HandlerSexChoice(bot, chatID, text)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-	case state.State4:
-		err := HandlerQ4(bot, update)
+	case StateProfileAgeChoice:
+		err := HandlerAgeChoice(bot, chatID, text)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-	case state.State5:
-		err := HandlerQ5(bot, update)
+	case StateProfileText:
+		err := HandlerProfileText(bot, chatID, text)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-	case state.State6:
-		err := HandlerQ6(bot, update)
+	case StateProfilePhoto:
+		err := HandlerEndPhoto(bot, chatID)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-	case state.State7:
-		err := HandlerQ7(bot, update)
+	case StateWait:
+		err := HandlerTextStateWait(bot, chatID, text)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-	case state.State8:
-		err := HandlerQ8(bot, update)
+	case StateLike:
+		err := HandlerTextLikeState(bot, chatID, text)
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+	case StateLikePreMatch:
+		err := HandlerTextLikeState(bot, chatID, text)
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+	case StateMatch:
+		err := HandlerMatch(bot, chatID)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	default:
-		log.Printf("strage state %q", q)
+		log.Printf("strage state %q", st)
 	}
 	return nil
 }
@@ -522,6 +438,7 @@ func ShowProfile(
 ) error {
 	const op = "ShowProfile"
 	var photos []interface{}
+
 	for i, ph := range p.Photo {
 		x := tgbotapi.NewInputMediaPhoto(tgbotapi.FileID(ph))
 		if i == 0 {

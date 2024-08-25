@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	existUser               = errors.New("user already exist")
+	//existUser               = errors.New("user already exist")
 	ErrTokenNotFound        = errors.New("token not found")
 	ErrLoginOrPasswordWrong = errors.New("login or password wrong")
 	ErrLikeNotIndexed       = errors.New("like not indexed")
@@ -16,6 +16,7 @@ var (
 
 type Storage interface {
 	Ping() error
+	Close() error
 	CreateUser(
 		ctx context.Context, login, password, phoneNumber, email string,
 	) error
@@ -55,5 +56,11 @@ type Storage interface {
 
 	MakeLike(
 		ctx context.Context, userID, likedUserID int, isLike bool,
-	) error
+	) (bool, error)
+
+	GetAllUserIDs(ctx context.Context) ([]int, error)
+	GetNewLikes(ctx context.Context, userID int) ([]int, error)
+	GetNewPairs(ctx context.Context, userID int, n int) ([]int, error)
+
+	LoadIndexed(ctx context.Context, userID int, indexedIDs []int) error
 }

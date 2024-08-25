@@ -24,14 +24,14 @@ $$ language plpgsql;
 
 -- создать анкету с загруженным фото или без фото
 CREATE OR REPLACE FUNCTION dating_data.create_profile(user_id_in INTEGER, profile_text_in TEXT, sex_in BOOLEAN,
-                                                      birthday_in TIMESTAMP, name_in VARCHAR(255),
+                                                      birthday_in TIMESTAMP, name_in VARCHAR(255), mes_URL TEXT,
                                                       photo_id_in INTEGER DEFAULT 0) RETURNS INTEGER AS
 $$
 DECLARE
     p_id INTEGER;
 BEGIN
     INSERT INTO dating_data.profile
-    (user_id, profile_text, sex, birthday, name) VALUES (user_id_in, profile_text_in, sex_in, birthday_in, name_in);
+    (user_id, profile_text, sex, birthday, name, url) VALUES (user_id_in, profile_text_in, sex_in, birthday_in, name_in, mes_URL);
 
     p_id := (SELECT profile_id FROM dating_data.profile WHERE user_id = user_id_in);
 
@@ -45,14 +45,14 @@ $$ language plpgsql;
 -- создать анкету с новым фото
 CREATE OR REPLACE FUNCTION dating_data.create_profile_with_new_photo(user_id_in INTEGER, profile_text_in TEXT,
                                                                      sex_in BOOLEAN, birthday_in TIMESTAMP,
-                                                                     name_in VARCHAR(255), photo_URL TEXT)
+                                                                     name_in VARCHAR(255), mes_URL TEXT, photo_URL TEXT)
     RETURNS INTEGER AS
 $$
 DECLARE
     p_id INTEGER;
 BEGIN
     INSERT INTO dating_data.profile
-    (user_id, profile_text, sex, birthday, name) VALUES (user_id_in, profile_text_in, sex_in, birthday_in, name_in);
+    (user_id, profile_text, sex, birthday, name, url) VALUES (user_id_in, profile_text_in, sex_in, birthday_in, name_in, mes_URL);
 
     p_id := (SELECT profile_id FROM dating_data.profile WHERE user_id = user_id_in);
 

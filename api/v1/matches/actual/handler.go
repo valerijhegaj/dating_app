@@ -30,7 +30,7 @@ type requiredBody struct {
 	UserID int `json:"user_id"`
 }
 
-func DeleteHandler(db storage.Storage) http.HandlerFunc {
+func PostHandler(db storage.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := r.Context().Value("userID").(int)
 		data, err := io.ReadAll(r.Body)
