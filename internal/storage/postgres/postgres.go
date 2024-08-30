@@ -414,6 +414,10 @@ func (s *Storage) LoadIndexed(
 ) error {
 	const op = "storage.postgres.GetNewPairs"
 
+	if len(indexedIDs) == 0 {
+		return nil
+	}
+
 	removeIndexed := `DELETE FROM dating_data.indexed_users 
 										WHERE user_id = $1;`
 	_, err := s.Db.ExecContext(ctx, removeIndexed, userID)
