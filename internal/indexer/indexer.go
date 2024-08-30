@@ -100,7 +100,7 @@ func (i *Indexer) indexing(ctx context.Context) error {
 
 	userIDs, err := i.data.GetAllUserIDs(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("%v: %w", op, err)
 	}
 	var errs []error
 	for _, userID := range userIDs {
