@@ -70,7 +70,7 @@ func (i *Indexer) Start(finalizeShutdownChan chan struct{}) {
 			}
 			cancel()
 		}
-		log.Println("Indexer shutdown.")
+		log.Println("Indexer stopped.")
 		finalizeShutdownChan <- struct{}{}
 	}()
 }
