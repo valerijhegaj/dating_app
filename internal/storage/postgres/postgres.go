@@ -425,12 +425,8 @@ func (s *Storage) LoadIndexed(
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	loadIndexed := `INSERT INTO dating_data.indexed_users (user_id, indexed_user_id) VALUES `
-	for i := range indexedIDs {
-		if i == 0 {
-			loadIndexed += "($1, $2)"
-			continue
-		}
+	loadIndexed := `INSERT INTO dating_data.indexed_users (user_id, indexed_user_id) VALUES ($1, $2)`
+	for i := 1; i < len(indexedIDs); i++ {
 		loadIndexed += ", ($1, $" + strconv.Itoa(i+2) + ")"
 	}
 	loadIndexed += ";"
