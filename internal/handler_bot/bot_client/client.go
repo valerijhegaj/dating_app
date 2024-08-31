@@ -3,8 +3,10 @@ package bot_client
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -20,6 +22,34 @@ var URL = "http://" + configs.Config.TgBot.Host + ":" + strconv.Itoa(configs.Con
 func CreateUser(login, password string) (http.Client, int, error) {
 	const op = "CreateUser"
 
+	body := fmt.Sprintf(
+		`{"login":"%s", "password":"%s"}`, login, password,
+	)
+
+	r, err := http.Post(
+		URL+"/api/v1/user", "application/json",
+		bytes.NewBufferString(body),
+	)
+	if err != nil {
+		return http.Client{}, 0, fmt.Errorf("%s: %w", op, err)
+	}
+	err = r.Body.Close()
+	if err != nil {
+		return http.Client{}, 0, fmt.Errorf("%s: %w", op, err)
+	}
+
+	client, ID, err := LogInUser(login, password)
+	if err != nil {
+		return client, 0, fmt.Errorf("%s: %w", op, err)
+	}
+	return client, ID, err
+}
+
+var NoUserErr = errors.New("No user")
+
+func LogInUser(login, password string) (http.Client, int, error) {
+	const op = "LogInUser"
+
 	client := http.Client{}
 	client.Jar, _ = cookiejar.New(nil)
 	body := fmt.Sprintf(
@@ -27,18 +57,6 @@ func CreateUser(login, password string) (http.Client, int, error) {
 	)
 
 	r, err := client.Post(
-		URL+"/api/v1/user", "application/json",
-		bytes.NewBufferString(body),
-	)
-	if err != nil {
-		return client, 0, fmt.Errorf("%s: %w", op, err)
-	}
-	err = r.Body.Close()
-	if err != nil {
-		return client, 0, fmt.Errorf("%s: %w", op, err)
-	}
-
-	r, err = client.Post(
 		URL+"/api/v1/session", "application/json",
 		bytes.NewBufferString(body),
 	)
@@ -48,6 +66,9 @@ func CreateUser(login, password string) (http.Client, int, error) {
 	err = r.Body.Close()
 	if err != nil {
 		return client, 0, fmt.Errorf("%s: %w", op, err)
+	}
+	if r.StatusCode == http.StatusForbidden {
+		return client, 0, NoUserErr
 	}
 	u, err := url.Parse(URL)
 	if err != nil {
@@ -150,7 +171,11 @@ func GetLikes(client http.Client) ([]profile.Like, error) {
 	if err != nil {
 		return likes, fmt.Errorf("%s: %w", op, err)
 	}
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Printf("%s: %w", op, err)
+		}
+	}()
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -172,7 +197,11 @@ func GetProfile(client http.Client, userID int) (
 	if err != nil {
 		return p, fmt.Errorf("%s: %w", op, err)
 	}
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Printf("%s: %w", op, err)
+		}
+	}()
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -197,7 +226,11 @@ func PostProfileViewed(client http.Client, userID int) error {
 		URL+"/api/v1/matches/actual", "",
 		bytes.NewReader(data),
 	)
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Printf("%s: %w", op, err)
+		}
+	}()
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
@@ -217,7 +250,11 @@ func GetIndexed(client http.Client) (int, error) {
 	}
 
 	body, err := io.ReadAll(r.Body)
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Printf("%s: %w", op, err)
+		}
+	}()
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", op, err)
 	}

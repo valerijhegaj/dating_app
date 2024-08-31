@@ -130,11 +130,11 @@ func HandlerProfileText(
 	return nil
 }
 
-func loginRule(chatID int64) string {
+func LoginRule(chatID int64) string {
 	return "tg" + strconv.FormatInt(chatID, 16)
 }
 
-func passwordRule(chatID int64) string {
+func PasswordRule(chatID int64) string {
 	return hash.Calculate(
 		"tg" + strconv.FormatInt(
 			chatID, 16,
@@ -164,8 +164,8 @@ func HandlerEndPhoto(
 
 	isFirstProfile := !Manager.CheckClient(chatID)
 	if isFirstProfile {
-		login := loginRule(chatID)
-		password := passwordRule(chatID)
+		login := LoginRule(chatID)
+		password := PasswordRule(chatID)
 		client, ID, err := bot_client.CreateUser(login, password)
 		if err != nil {
 			return fmt.Errorf("%s: %w", op, err)

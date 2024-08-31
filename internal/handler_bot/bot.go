@@ -1,6 +1,7 @@
 package handler_bot
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -30,6 +31,33 @@ func Send(
 }
 
 var RemoveKeyboard = tgbotapi.NewRemoveKeyboard(true)
+
+func HandlerOnNonAuth(
+	bot *tgbotapi.BotAPI, chatID int64, msg *tgbotapi.Message,
+) error {
+	const op = "HandlerOnNonAuth"
+
+	login, password := LoginRule(chatID), PasswordRule(chatID)
+	client, ID, err := bot_client.LogInUser(login, password)
+	if errors.Is(err, bot_client.NoUserErr) {
+		if err := HandlerOnStart(bot, chatID); err != nil {
+			return fmt.Errorf("%s: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	Manager.UpdateClient(chatID, client)
+	Manager.UpdateTgUserID(chatID, ID)
+	Manager.UpdateState(chatID, StateWait)
+
+	if err := HandlerOnText(bot, chatID, msg); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
+}
 
 func HandlerOnStart(bot *tgbotapi.BotAPI, chatID int64) error {
 	const op = "HandlerOnStart"
@@ -378,53 +406,45 @@ func HandlerOnText(
 
 	switch st {
 	case StateNonAuthed:
-		err := HandlerOnStart(bot, chatID)
-		if err != nil {
+		if err := HandlerOnNonAuth(bot, chatID, msg); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case StateProfileNameChoice:
-		err := HandlerNameChoice(bot, chatID, text, msg.Chat.UserName)
-		if err != nil {
+		if err := HandlerNameChoice(
+			bot, chatID, text, msg.Chat.UserName,
+		); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case StateProfileSexChoice:
-		err := HandlerSexChoice(bot, chatID, text)
-		if err != nil {
+		if err := HandlerSexChoice(bot, chatID, text); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case StateProfileAgeChoice:
-		err := HandlerAgeChoice(bot, chatID, text)
-		if err != nil {
+		if err := HandlerAgeChoice(bot, chatID, text); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case StateProfileText:
-		err := HandlerProfileText(bot, chatID, text)
-		if err != nil {
+		if err := HandlerProfileText(bot, chatID, text); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case StateProfilePhoto:
-		err := HandlerEndPhoto(bot, chatID)
-		if err != nil {
+		if err := HandlerEndPhoto(bot, chatID); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case StateWait:
-		err := HandlerTextStateWait(bot, chatID, text)
-		if err != nil {
+		if err := HandlerTextStateWait(bot, chatID, text); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case StateLike:
-		err := HandlerTextLikeState(bot, chatID, text)
-		if err != nil {
+		if err := HandlerTextLikeState(bot, chatID, text); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case StateLikePreMatch:
-		err := HandlerTextLikeState(bot, chatID, text)
-		if err != nil {
+		if err := HandlerTextLikeState(bot, chatID, text); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	case StateMatch:
-		err := HandlerMatch(bot, chatID)
-		if err != nil {
+		if err := HandlerMatch(bot, chatID); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	default:
